@@ -11,11 +11,12 @@ class RateLimiterStorage:
     """Storing and retreiving client data"""
     def __init__(self):
         self.clients: Dict[str, Dict] = {}
-    def has_client(self, client_id):
-        return client_id in self.clients
 
     def get_client(self, client_id):
-        return self.clients[client_id]
+        if client_id in self.clients:
+            return self.clients[client_id]
+
+        return client_id in self.clients
 
     def add_client(self, client_id, data):
         self.clients[client_id] = data 
@@ -39,7 +40,7 @@ class FixedWindowRateLimiter:
         current_time = int(time.time())
         current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
 
-        if not self.storage.has_client(client_id):
+        if not self.storage.get_client(client_id):
             data = {"window_start": current_window_start, "count": 0}
             self.storage.add_client(client_id, data)
         
