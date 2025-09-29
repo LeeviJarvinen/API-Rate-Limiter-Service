@@ -7,24 +7,42 @@ class RateLimit:
     window_size: int
     max_requests: int
 
-class FixedWindowRateLimiter:
+class RateLimiterStorage:
+    """Storing and retreiving client data"""
     def __init__(self):
         self.clients: Dict[str, Dict] = {}
 
+    def get_client(self, client_id):
+        return self.clients[client_id] 
+
+    def add_client(self, client_id, data):
+        self.clients[client_id] = data 
+
+    def update_client(self, client_id, data):
+        self.clients[client_id] = data 
+
+    def cleanup_expired(self):
+        pass
+
+class FixedWindowRateLimiter:
+    def __init__(self):
+        self.storage = RateLimiterStorage()
+
     def is_allowed(self, client_id: str, rate_limit: Dict):
-        current_time = time.time()
+        if client_id == None:
+            raise ValueError("client_id cannot be None")
+        if rate_limit.window_size < 0 or rate_limit.max_requests < 0:
+            raise ValueError("RateLimit values must be positive")
+        
+        current_time = int(time.time())
         current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
-        current_window_end = current_window_start + rate_limit.window_size
 
-        if client_id not in self.clients:
-            self.clients[client_id] = {"window_start": current_window_start, "count": 0} 
+        if client_id not in self.storage.clients or self.storage.clients[client_id]["window_start"] != current_window_start:
+            data = {"window_start": current_window_start, "count": 0}
+            self.storage.add_client(client_id, data)
+        
+        if self.storage.clients[client_id]["count"] > rate_limit.max_requests:
+            return False
 
-        if self.clients[client_id]["window_start"] != current_window_start:
-            print("resetting")
-            self.clients[client_id] = {"window_start": current_window_start, "count": 0}
-
-        if self.clients[client_id]["count"] >= rate_limit.max_requests:
-            return "rate limited by count"
-
-        self.clients[client_id]["count"] += 1 
+        self.storage.clients[client_id]["count"] += 1
         return True
