@@ -71,25 +71,43 @@ class SlidingWindowRateLimiter:
         current_time = int(time.time())
         current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
         current_window_end = current_window_start + rate_limit.window_size
-
         client_data = self.storage.get_client(client_id)
-        overlap = (current_window_end - current_time) / rate_limit.window_size
-        count = 0
-        if client_data:
-            count = (client_data["prev_count"] * overlap) + client_data["current_count"]
 
         if not client_data:
-            data = {"window_start": current_window_start, "current_count": 0, "prev_count": 0}
+            data = {
+                "window_start": current_window_start, 
+                "current_count": 0, 
+                "prev_count": 0
+            }
+            w_count = 0
             self.storage.add_client(client_id, data)
             client_data = data
 
-        if client_data["window_start"] != current_window_start:
-            data = {"window_start": current_window_start, "current_count": 0, "prev_count": client_data["current_count"]}
-            self.storage.update_client(client_id, data)
+        if client_data.get("window_start") != current_window_start:
+            windows_passed = (current_window_start - client_data.get("window_start")) // rate_limit.window_size
+            if windows_passed > 1:
+                 data = {
+                    "window_start": current_window_start,
+                    "current_count": 0, 
+                    "prev_count": 0
+                 }
+                 client_data = data
+                 self.storage.update_client(client_id, data)
+            else:
+                data = {
+                    "window_start": current_window_start,
+                    "current_count": 0, 
+                    "prev_count": client_data.get("current_count")
+                }
+                client_data = data
+                self.storage.update_client(client_id, data)
 
-        if count > rate_limit.max_requests:
+        overlap = (current_window_end - current_time) / rate_limit.window_size
+        w_count = client_data.get("prev_count") * overlap + client_data.get("current_count")
+
+        if w_count >= rate_limit.max_requests:
             return False
-        
+
         client_data["current_count"] += 1
         self.storage.update_client(client_id, client_data)
         return True
