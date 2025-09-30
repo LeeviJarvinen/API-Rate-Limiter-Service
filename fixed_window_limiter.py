@@ -57,3 +57,39 @@ class FixedWindowRateLimiter:
         client_data["count"] += 1
         self.storage.update_client(client_id, client_data)
         return True
+
+class SlidingWindowRateLimiter:
+    def __init__(self):
+        self.storage = RateLimiterStorage()
+
+    def is_allowed(self, client_id: str, rate_limit: Dict):
+        if client_id == None:
+            raise ValueError("client_id cannot be None")
+        if rate_limit.window_size <= 0 or rate_limit.max_requests <= 0:
+            raise ValueError("RateLimit values must be positive")
+        
+        current_time = int(time.time())
+        current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
+        current_window_end = current_window_start + rate_limit.window_size
+
+        client_data = self.storage.get_client(client_id)
+        overlap = (current_window_end - current_time) / rate_limit.window_size
+        count = 0
+        if client_data:
+            count = (client_data["prev_count"] * overlap) + client_data["current_count"]
+
+        if not client_data:
+            data = {"window_start": current_window_start, "current_count": 0, "prev_count": 0}
+            self.storage.add_client(client_id, data)
+            client_data = data
+
+        if client_data["window_start"] != current_window_start:
+            data = {"window_start": current_window_start, "current_count": 0, "prev_count": client_data["current_count"]}
+            self.storage.update_client(client_id, data)
+
+        if count > rate_limit.max_requests:
+            return False
+        
+        client_data["current_count"] += 1
+        self.storage.update_client(client_id, client_data)
+        return True
