@@ -8,7 +8,7 @@ class RateLimit:
     window_size: int
     max_requests: int
 
-class RateLimiterStorage:
+class RateLimitStorage:
     """Storing and retreiving client data"""
     def __init__(self):
         self.clients: Dict[str, Dict] = {}
@@ -33,9 +33,33 @@ class RateLimiterStorage:
     def cleanup_expired(self):
         pass
 
+class RateLimitValidator:
+    @staticmethod
+    def validate_client_id():
+        pass
+
+    @staticmethod
+    def validate_rate_limit():
+        pass
+
+    @staticmethod
+    def validate_client_data(data, required):
+        if not isinstance(data, Dict):
+            return False
+
+        for key, expected in required.items():
+           if key not in data:
+               return False
+           if not isinstance(data[key], expected):
+               return False
+           if data[key] < 0:
+               return False
+           return True
+
+    
 class FixedWindowRateLimiter:
     def __init__(self):
-        self.storage = RateLimiterStorage()
+        self.storage = RateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict):
         if not client_id or not isinstance(client_id, str):
@@ -52,8 +76,12 @@ class FixedWindowRateLimiter:
         try:
             client_data = self.storage.get_client(client_id)
 
-            if client_data and not self._validate_client_data(client_data):
-                print("invalid client data")
+            if client_data and not RateLimitValidator.validate_client_data(client_data, 
+               {"window_start": (int, float), 
+                "count": (int, float)
+               }):
+
+                print("invalid client data") #use logger here at some point instead of a print
                 return False
          
             if not client_data:
@@ -83,26 +111,10 @@ class FixedWindowRateLimiter:
             print(f"Rate limiter error {e}")
             return True 
         
-    def _validate_client_data(self, client_data):
-        if not isinstance(client_data, dict):
-            return False
-        required = {
-            "window_start": (int),
-            "count": (int)
-        }
-
-        for key, expected in required.items():
-            if key not in client_data:
-                return False
-            if not isinstance(client_data[key], expected):
-                return False
-            if client_data[key] < 0:
-                return False
-            return True
 
 class SlidingWindowRateLimiter:
     def __init__(self):
-        self.storage = RateLimiterStorage()
+        self.storage = RateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict):
         if client_id == None:
