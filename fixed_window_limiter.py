@@ -35,12 +35,16 @@ class RateLimitStorage:
 
 class RateLimitValidator:
     @staticmethod
-    def validate_client_id():
-        pass
+    def validate_client_id(client_id):
+        if not client_id or not isinstance(client_id, str):
+            return False
+        return True
 
     @staticmethod
-    def validate_rate_limit():
-        pass
+    def validate_rate_limit(rate_limit):
+        if rate_limit.window_size <= 0 or rate_limit.max_requests <= 0:
+            return False
+        return True
 
     @staticmethod
     def validate_client_data(data, required):
@@ -62,10 +66,10 @@ class FixedWindowRateLimiter:
         self.storage = RateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict):
-        if not client_id or not isinstance(client_id, str):
+        if not RateLimitValidator.validate_client_id(client_id):
             raise ValueError("Invalid client_id")
 
-        if rate_limit.window_size <= 0 or rate_limit.max_requests <= 0:
+        if not RateLimitValidator.validate_rate_limit(rate_limit):
             raise ValueError("RateLimit values must be greater than 0")
 
 
@@ -106,7 +110,6 @@ class FixedWindowRateLimiter:
             self.storage.update_client(client_id, client_data)
             return True
 
-
         except Exception as e:
             print(f"Rate limiter error {e}")
             return True 
@@ -117,54 +120,70 @@ class SlidingWindowRateLimiter:
         self.storage = RateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict):
-        if client_id == None:
-            raise ValueError("client_id cannot be None")
-        if rate_limit.window_size <= 0 or rate_limit.max_requests <= 0:
-            raise ValueError("RateLimit values must be positive")
-        
+        if not RateLimitValidator.validate_client_id(client_id):
+            raise ValueError("Invalid client_id")
+
+        if not RateLimitValidator.validate_rate_limit(rate_limit):
+            raise ValueError("RateLimit values must be greater than 0")
+
+
         current_time = int(time.time())
         current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
         current_window_end = current_window_start + rate_limit.window_size
         client_data = self.storage.get_client(client_id)
+        try:
+            if client_data and not RateLimitValidator.validate_client_data(client_data, 
+               {"window_start": (int, float),
+                "current_count": (int, float),
+                "prev_count": (int, float)
+               }):
 
-        if not client_data:
-            data = {
-                "window_start": current_window_start, 
-                "current_count": 0, 
-                "prev_count": 0
-            }
-            w_count = 0
-            overlap = 0
-            self.storage.add_client(client_id, data)
-            client_data = data
-
-        if client_data.get("window_start") != current_window_start:
-            windows_passed = (current_window_start - client_data.get("window_start")) // rate_limit.window_size
-            if windows_passed >= 2:
-                print("resetting windows")
+                print("invalid client data") #use logger here at some point instead of a print
+                return False
+         
+            if not client_data:
                 data = {
-                    "window_start": current_window_start,
+                    "window_start": current_window_start, 
                     "current_count": 0, 
                     "prev_count": 0
                 }
+                w_count = 0
+                overlap = 0
+                self.storage.add_client(client_id, data)
                 client_data = data
-                self.storage.update_client(client_id, data)
-            else:
-                data = {
-                    "window_start": current_window_start,
-                    "current_count": 0, 
-                    "prev_count": client_data.get("current_count")
-                }
-                client_data = data
-                self.storage.update_client(client_id, data)
 
-        overlap = (current_window_end - current_time) / rate_limit.window_size
-        w_count = client_data.get("prev_count") * overlap + client_data.get("current_count")
+            if client_data.get("window_start") != current_window_start:
+                windows_passed = (current_window_start - client_data.get("window_start")) // rate_limit.window_size
+                if windows_passed >= 2:
+                    print("resetting windows")
+                    data = {
+                        "window_start": current_window_start,
+                        "current_count": 0, 
+                        "prev_count": 0
+                    }
+                    client_data = data
+                    self.storage.update_client(client_id, data)
+                else:
+                    data = {
+                        "window_start": current_window_start,
+                        "current_count": 0, 
+                        "prev_count": client_data.get("current_count")
+                    }
+                    client_data = data
+                    self.storage.update_client(client_id, data)
+
+            overlap = (current_window_end - current_time) / rate_limit.window_size
+            w_count = client_data.get("prev_count") * overlap + client_data.get("current_count")
+            
+            if w_count >= rate_limit.max_requests:
+                return False
+
+            client_data["current_count"] += 1
+            self.storage.update_client(client_id, client_data)
+            return True
+
+        except Exception as e:
+            print(f"Rate limiter error {e}")
+            return True 
         
-        if w_count >= rate_limit.max_requests:
-            return False
-
-        client_data["current_count"] += 1
-        self.storage.update_client(client_id, client_data)
-        return True
 
