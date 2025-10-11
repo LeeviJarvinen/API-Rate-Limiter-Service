@@ -4,9 +4,15 @@ from typing import Dict
 from dataclasses import dataclass
 
 @dataclass
-class RateLimit:
+class WindowRateLimit:
     window_size: int
     max_requests: int
+
+@dataclass
+class TokenRateLimit:
+    max_token_capacity: int
+    refill_rate: float
+
 
 class RateLimitStorage:
     """Storing and retreiving client data"""
@@ -81,8 +87,8 @@ class FixedWindowRateLimiter:
             client_data = self.storage.get_client(client_id)
 
             if client_data and not RateLimitValidator.validate_client_data(client_data, 
-               {"window_start": (int, float), 
-                "count": (int, float)
+               {"window_start": (int), 
+                "count": (int)
                }):
 
                 print("invalid client data") #use logger here at some point instead of a print
@@ -133,9 +139,9 @@ class SlidingWindowRateLimiter:
         client_data = self.storage.get_client(client_id)
         try:
             if client_data and not RateLimitValidator.validate_client_data(client_data, 
-               {"window_start": (int, float),
-                "current_count": (int, float),
-                "prev_count": (int, float)
+               {"window_start": (int),
+                "current_count": (int),
+                "prev_count": (int)
                }):
 
                 print("invalid client data") #use logger here at some point instead of a print
@@ -187,3 +193,57 @@ class SlidingWindowRateLimiter:
             return True 
         
 
+class TokenBucketRateLimiter:
+    def __init__(self):
+        self.storage = RateLimitStorage()
+
+
+    def is_allowed(self, client_id: str, token_cost: int, rate_limit: Dict):
+        if not RateLimitValidator.validate_client_id(client_id):
+            raise ValueError("Invalid client_id")
+
+        if not RateLimitValidator.validate_rate_limit(rate_limit):
+            raise ValueError("RateLimit values must be greater than 0")
+
+
+        current_time = int(time.time())
+        current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
+
+
+        try:
+            client_data = self.storage.get_client(client_id)
+
+            if client_data and not RateLimitValidator.validate_client_data(client_data, 
+               {"last_refill_time": (int), 
+                "token": (int)
+               }):
+
+                print("invalid client data") #use logger here at some point instead of a print
+                return False
+         
+            if not client_data:
+                data = {
+                    "last_refill_time": current_window_start, 
+                    "token": 0
+                }
+                self.storage.add_client(client_id, data)
+                client_data = data
+
+            if client_data.get("window_start") != current_window_start:
+                data = {
+                    "last_refill_time": current_window_start,
+                    "token": 0
+                }
+                self.storage.update_client(client_id, data)
+
+            if client_data.get("count", 0) > rate_limit.max_requests:
+                return False
+            
+            client_data["count"] += 1
+            self.storage.update_client(client_id, client_data)
+            return True
+
+        except Exception as e:
+            print(f"Rate limiter error {e}")
+            return True 
+ 
