@@ -11,7 +11,7 @@ class WindowRateLimit:
 @dataclass
 class TokenRateLimit:
     max_token_capacity: int
-    refill_rate: float
+    refill_rate: int
 
 
 class RateLimitStorage:
@@ -197,18 +197,11 @@ class TokenBucketRateLimiter:
     def __init__(self):
         self.storage = RateLimitStorage()
 
-
-    def is_allowed(self, client_id: str, token_cost: int, rate_limit: Dict):
+    def is_allowed(self, client_id: str, rate_limit: Dict, token_cost: int):
         if not RateLimitValidator.validate_client_id(client_id):
             raise ValueError("Invalid client_id")
 
-        if not RateLimitValidator.validate_rate_limit(rate_limit):
-            raise ValueError("RateLimit values must be greater than 0")
-
-
         current_time = int(time.time())
-        current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
-
 
         try:
             client_data = self.storage.get_client(client_id)
@@ -220,26 +213,24 @@ class TokenBucketRateLimiter:
 
                 print("invalid client data") #use logger here at some point instead of a print
                 return False
-         
+
             if not client_data:
                 data = {
-                    "last_refill_time": current_window_start, 
-                    "token": 0
+                    "last_refill_time": current_time, 
+                    "token": rate_limit.max_token_capacity
                 }
                 self.storage.add_client(client_id, data)
                 client_data = data
 
-            if client_data.get("window_start") != current_window_start:
-                data = {
-                    "last_refill_time": current_window_start,
-                    "token": 0
-                }
-                self.storage.update_client(client_id, data)
+            passed_time = current_time - client_data["last_refill_time"]
+            client_data["token"] = min(rate_limit.max_token_capacity, client_data["token"] + passed_time * rate_limit.refill_rate)
 
-            if client_data.get("count", 0) > rate_limit.max_requests:
+            if client_data.get("token") <= 0:
                 return False
             
-            client_data["count"] += 1
+            client_data["token"] -= token_cost
+            client_data["last_refill_time"] = current_time
+
             self.storage.update_client(client_id, client_data)
             return True
 
