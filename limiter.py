@@ -197,18 +197,18 @@ class TokenBucketRateLimiter:
     def __init__(self):
         self.storage = RateLimitStorage()
 
-    def is_allowed(self, client_id: str, rate_limit: Dict, token_cost: int):
+    def is_allowed(self, client_id: str, rate_limit: Dict, token_cost: float):
         if not RateLimitValidator.validate_client_id(client_id):
             raise ValueError("Invalid client_id")
 
-        current_time = int(time.time())
+        current_time = float(time.time())
 
         try:
             client_data = self.storage.get_client(client_id)
 
             if client_data and not RateLimitValidator.validate_client_data(client_data, 
-               {"last_refill_time": (int), 
-                "token": (int)
+               {"last_refill_time": (int, float), 
+                "token": (int, float)
                }):
 
                 print("invalid client data") #use logger here at some point instead of a print
@@ -224,13 +224,17 @@ class TokenBucketRateLimiter:
 
             passed_time = current_time - client_data["last_refill_time"]
             client_data["token"] = min(rate_limit.max_token_capacity, client_data["token"] + passed_time * rate_limit.refill_rate)
+            print(client_data["token"])
 
-            if client_data.get("token") <= 0:
-                return False
             
-            client_data["token"] -= token_cost
+            if client_data.get("token") < token_cost:
+                client_data["last_refill_time"] = current_time
+                self.storage.update_client(client_id, client_data)
+                return False
+  
+            client_data["token"] = client_data.get("token") - token_cost
             client_data["last_refill_time"] = current_time
-
+           
             self.storage.update_client(client_id, client_data)
             return True
 
