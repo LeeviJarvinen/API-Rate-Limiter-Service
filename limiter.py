@@ -1,5 +1,7 @@
 import time
 import threading
+import redis
+import json
 from typing import Dict
 from dataclasses import dataclass
 
@@ -39,6 +41,29 @@ class RateLimitStorage:
     def cleanup_expired(self):
         pass
 
+
+class RedisRateLimitStorage:
+    """Storing and retreiving client data"""
+    def __init__(self):
+        self.redis = redis.Redis(host='localhost', port=6379, decode_responses=True)
+
+    def has_client(self, client_id):
+        return self.redis.exists(f"client{client_id}")
+
+    def get_client(self, client_id):
+        data = self.redis.get(f"client:{client_id}")
+        return json.loads(data) if data else None
+
+    def add_client(self, client_id, data):
+        self.redis.set(f"client:{client_id}", json.dumps(data))
+
+    def update_client(self, client_id, data):
+        self.redis.set(f"client:{client_id}", json.dumps(data))
+
+    def cleanup_expired(self):
+        pass
+
+
 class RateLimitValidator:
     @staticmethod
     def validate_client_id(client_id):
@@ -75,7 +100,7 @@ class RateLimitValidator:
     
 class FixedWindowRateLimiter:
     def __init__(self):
-        self.storage = RateLimitStorage()
+        self.storage = RedisRateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict):
         if not RateLimitValidator.validate_client_id(client_id):
@@ -91,7 +116,6 @@ class FixedWindowRateLimiter:
 
         try:
             client_data = self.storage.get_client(client_id)
-
             if client_data and not RateLimitValidator.validate_client_data(client_data, 
                {"window_start": (int), 
                 "count": (int)
@@ -113,8 +137,10 @@ class FixedWindowRateLimiter:
                     "window_start": current_window_start,
                     "count": 0
                 }
+                client_data = data
                 self.storage.update_client(client_id, data)
-
+            
+            print(client_data)
             if client_data.get("count", 0) > rate_limit.max_requests:
                 return False
             
