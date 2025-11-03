@@ -155,7 +155,7 @@ class FixedWindowRateLimiter:
 
 class SlidingWindowRateLimiter:
     def __init__(self):
-        self.storage = RateLimitStorage()
+        self.storage = RedisRateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict):
         if not RateLimitValidator.validate_client_id(client_id):
@@ -227,7 +227,7 @@ class SlidingWindowRateLimiter:
 
 class TokenBucketRateLimiter:
     def __init__(self):
-        self.storage = RateLimitStorage()
+        self.storage = RedisRateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict, token_cost: float):
         if not RateLimitValidator.validate_client_id(client_id):
