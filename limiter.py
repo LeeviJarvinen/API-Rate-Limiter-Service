@@ -17,7 +17,7 @@ class TokenRateLimit:
 
 
 class RateLimitStorage:
-    """Storing and retreiving client data"""
+    """Storing and reteiving client data"""
     def __init__(self):
         self.clients: Dict[str, Dict] = {}
         self.lock = threading.Lock()
@@ -68,34 +68,37 @@ class RateLimitValidator:
     @staticmethod
     def validate_client_id(client_id):
         if not client_id or not isinstance(client_id, str):
-            return False
-        return True
+            raise ValueError("Invalid client_id")
 
     @staticmethod
     def validate_window_rate_limit(rate_limit):
         if rate_limit.window_size <= 0 or rate_limit.max_requests <= 0:
-            return False
-        return True
+            raise ValueError("Invalid rate_limit")
 
     @staticmethod
     def validate_bucket_rate_limit(rate_limit):
         if rate_limit.max_token_capacity <= 0 or rate_limit.refill_rate <= 0:
-            return False
-        return True
+            raise ValueError("Invalid rate_limit")
 
     @staticmethod
     def validate_client_data(data, required):
+        valid = True
+
         if not isinstance(data, Dict):
-            return False
+            valid = False
 
         for key, expected in required.items():
-           if key not in data:
-               return False
-           if not isinstance(data[key], expected):
-               return False
-           if data[key] < 0:
-               return False
-           return True
+            if key not in data:
+               valid = False
+               raise ValueError("Invalid client_data")
+            if not isinstance(data[key], expected):
+               valid = False
+               raise ValueError("Invalid client_data")
+            if data[key] < 0:
+               valid = False
+               raise ValueError("Invalid client_data")
+            if not valid:
+                raise ValueError("Invalid client_data")
 
     
 class FixedWindowRateLimiter:
@@ -103,12 +106,8 @@ class FixedWindowRateLimiter:
         self.storage = RedisRateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict):
-        if not RateLimitValidator.validate_client_id(client_id):
-            raise ValueError("Invalid client_id")
-
-        if not RateLimitValidator.validate_window_rate_limit(rate_limit):
-            raise ValueError("RateLimit values must be greater than 0")
-
+        RateLimitValidator.validate_window_rate_limit(rate_limit)
+        RateLimitValidator.validate_client_id(client_id)
 
         current_time = int(time.time())
         current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
@@ -116,14 +115,7 @@ class FixedWindowRateLimiter:
 
         try:
             client_data = self.storage.get_client(client_id)
-            if client_data and not RateLimitValidator.validate_client_data(client_data, 
-               {"window_start": (int), 
-                "count": (int)
-               }):
 
-                print("invalid client data") #use logger here at some point instead of a print
-                return False
-         
             if not client_data:
                 data = {
                     "window_start": current_window_start, 
@@ -131,7 +123,11 @@ class FixedWindowRateLimiter:
                 }
                 self.storage.add_client(client_id, data)
                 client_data = data
-
+            else:
+                RateLimitValidator.validate_client_data(client_data, 
+                   {"window_start": (int,), 
+                    "count": (int,)})
+           
             if client_data.get("window_start") != current_window_start:
                 data = {
                     "window_start": current_window_start,
@@ -150,7 +146,7 @@ class FixedWindowRateLimiter:
 
         except Exception as e:
             print(f"Rate limiter error {e}")
-            return True 
+            return False 
         
 
 class SlidingWindowRateLimiter:
@@ -158,33 +154,29 @@ class SlidingWindowRateLimiter:
         self.storage = RedisRateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict):
-        if not RateLimitValidator.validate_client_id(client_id):
-            raise ValueError("Invalid client_id")
-
-        if not RateLimitValidator.validate_window_rate_limit(rate_limit):
-            raise ValueError("RateLimit values must be greater than 0")
-
+        RateLimitValidator.validate_window_rate_limit(rate_limit)
+        RateLimitValidator.validate_client_id(client_id)
 
         current_time = int(time.time())
         current_window_start = (current_time // rate_limit.window_size) * rate_limit.window_size
         current_window_end = current_window_start + rate_limit.window_size
-        client_data = self.storage.get_client(client_id)
-        try:
-            if client_data and not RateLimitValidator.validate_client_data(client_data, 
-               {"window_start": (int),
-                "current_count": (int),
-                "prev_count": (int)
-               }):
 
-                print("invalid client data") #use logger here at some point instead of a print
-                return False
-         
+        try:
+            client_data = self.storage.get_client(client_id)
             if not client_data:
                 data = {
                     "window_start": current_window_start, 
                     "current_count": 0, 
                     "prev_count": 0
                 }
+            else:
+                RateLimitValidator.validate_client_data(client_data, 
+                   {"window_start": (int),
+                    "current_count": (int),
+                    "prev_count": (int)
+                   })
+
+
                 w_count = 0
                 overlap = 0
                 self.storage.add_client(client_id, data)
@@ -222,7 +214,7 @@ class SlidingWindowRateLimiter:
 
         except Exception as e:
             print(f"Rate limiter error {e}")
-            return True 
+            return False 
         
 
 class TokenBucketRateLimiter:
@@ -230,25 +222,13 @@ class TokenBucketRateLimiter:
         self.storage = RedisRateLimitStorage()
 
     def is_allowed(self, client_id: str, rate_limit: Dict, token_cost: float):
-        if not RateLimitValidator.validate_client_id(client_id):
-            raise ValueError("Invalid client_id")
-
-        if not RateLimitValidator.validate_bucket_rate_limit(rate_limit):
-            raise ValueError("RateLimit values must be greater than 0")
-
+        RateLimitValidator.validate_bucket_rate_limit(rate_limit)
+        RateLimitValidator.validate_client_id(client_id)
 
         current_time = float(time.time())
 
         try:
             client_data = self.storage.get_client(client_id)
-
-            if client_data and not RateLimitValidator.validate_client_data(client_data, 
-               {"last_refill_time": (int, float), 
-                "token": (int, float)
-               }):
-
-                print("invalid client data") #use logger here at some point instead of a print
-                return False
 
             if not client_data:
                 data = {
@@ -257,6 +237,11 @@ class TokenBucketRateLimiter:
                 }
                 self.storage.add_client(client_id, data)
                 client_data = data
+            else:
+                RateLimitValidator.validate_client_data(client_data, 
+                   {"last_refill_time": (int, float), 
+                    "token": (int, float)
+                   })
 
             passed_time = current_time - client_data["last_refill_time"]
             client_data["token"] = min(
@@ -277,5 +262,5 @@ class TokenBucketRateLimiter:
 
         except Exception as e:
             print(f"Rate limiter error {e}")
-            return True 
+            return False 
  
