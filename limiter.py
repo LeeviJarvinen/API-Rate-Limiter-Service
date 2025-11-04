@@ -43,7 +43,7 @@ class RateLimitStorage:
 
 
 class RedisRateLimitStorage:
-    """Storing and retreiving client data"""
+    """Storing and retreiving client data from redis"""
     def __init__(self):
         self.redis = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
@@ -90,13 +90,10 @@ class RateLimitValidator:
         for key, expected in required.items():
             if key not in data:
                valid = False
-               raise ValueError("Invalid client_data")
             if not isinstance(data[key], expected):
                valid = False
-               raise ValueError("Invalid client_data")
             if data[key] < 0:
                valid = False
-               raise ValueError("Invalid client_data")
             if not valid:
                 raise ValueError("Invalid client_data")
 
@@ -105,7 +102,7 @@ class FixedWindowRateLimiter:
     def __init__(self):
         self.storage = RedisRateLimitStorage()
 
-    def is_allowed(self, client_id: str, rate_limit: Dict):
+    def is_allowed(self, client_id: str, rate_limit: WindowRateLimit) -> bool:
         RateLimitValidator.validate_window_rate_limit(rate_limit)
         RateLimitValidator.validate_client_id(client_id)
 
@@ -153,7 +150,7 @@ class SlidingWindowRateLimiter:
     def __init__(self):
         self.storage = RedisRateLimitStorage()
 
-    def is_allowed(self, client_id: str, rate_limit: Dict):
+    def is_allowed(self, client_id: str, rate_limit: WindowRateLimit) -> bool:
         RateLimitValidator.validate_window_rate_limit(rate_limit)
         RateLimitValidator.validate_client_id(client_id)
 
@@ -221,7 +218,7 @@ class TokenBucketRateLimiter:
     def __init__(self):
         self.storage = RedisRateLimitStorage()
 
-    def is_allowed(self, client_id: str, rate_limit: Dict, token_cost: float):
+    def is_allowed(self, client_id: str, rate_limit: TokenRateLimit, token_cost: float) -> bool:
         RateLimitValidator.validate_bucket_rate_limit(rate_limit)
         RateLimitValidator.validate_client_id(client_id)
 
@@ -250,8 +247,8 @@ class TokenBucketRateLimiter:
             )
 
             client_data["last_refill_time"] = current_time
-            print(client_data["token"])
-            if client_data.get("token") < token_cost:
+
+            if client_data.get("token") <= token_cost:
                 self.storage.update_client(client_id, client_data)
                 return False
   
