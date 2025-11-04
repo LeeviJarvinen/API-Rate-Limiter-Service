@@ -2,8 +2,10 @@ import time
 import threading
 import redis
 import json
+import logging
 from typing import Dict
 from dataclasses import dataclass
+logger = logging.getLogger(__name__)
 
 @dataclass
 class WindowRateLimit:
@@ -133,7 +135,6 @@ class FixedWindowRateLimiter:
                 client_data = data
                 self.storage.update_client(client_id, data)
             
-            print(client_data)
             if client_data.get("count", 0) > rate_limit.max_requests:
                 return False
             
@@ -142,7 +143,7 @@ class FixedWindowRateLimiter:
             return True
 
         except Exception as e:
-            print(f"Rate limiter error {e}")
+            logger.exception(f"Rate limiter error {e}")
             return False 
         
 
@@ -166,6 +167,10 @@ class SlidingWindowRateLimiter:
                     "current_count": 0, 
                     "prev_count": 0
                 }
+
+                self.storage.add_client(client_id, data)
+                client_data = data
+
             else:
                 RateLimitValidator.validate_client_data(client_data, 
                    {"window_start": (int),
@@ -173,16 +178,12 @@ class SlidingWindowRateLimiter:
                     "prev_count": (int)
                    })
 
-
-                w_count = 0
-                overlap = 0
-                self.storage.add_client(client_id, data)
-                client_data = data
+            w_count = 0
+            overlap = 0
 
             if client_data.get("window_start") != current_window_start:
                 windows_passed = (current_window_start - client_data.get("window_start")) // rate_limit.window_size
                 if windows_passed >= 2:
-                    print("resetting windows")
                     data = {
                         "window_start": current_window_start,
                         "current_count": 0, 
@@ -210,7 +211,7 @@ class SlidingWindowRateLimiter:
             return True
 
         except Exception as e:
-            print(f"Rate limiter error {e}")
+            logger.exception(f"Rate limiter error {e}")
             return False 
         
 
@@ -258,6 +259,6 @@ class TokenBucketRateLimiter:
             return True
 
         except Exception as e:
-            print(f"Rate limiter error {e}")
+            logger.exception(f"Rate limiter error {e}")
             return False 
  
