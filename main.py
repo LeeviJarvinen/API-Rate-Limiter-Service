@@ -1,20 +1,12 @@
 from fastapi import FastAPI, Depends, HTTPException, Request
-from limiter import FixedWindowRateLimiter, SlidingWindowRateLimiter, TokenBucketRateLimiter, WindowRateLimit, TokenRateLimit
+from limiter import TokenBucketRateLimiter
 
 app = FastAPI()
-limiter = SlidingWindowRateLimiter()
+limiter = TokenBucketRateLimiter()
 
-def rate_limit_dependency(request: Request):
-    """dependency to check rate_limit"""
-    client_id = request.client.host
-    rate_limit = WindowRateLimit(window_size=60, max_requests=10)
 
-    if not limiter.is_allowed(client_id, rate_limit):
-        raise HTTPException(status_code=429, detail="Too Many Requests")
-
-    return True
-
-@app.get("/word", dependencies=[Depends(rate_limit_dependency)])
+@app.get("/word")
+@limiter.limit(max_token_capacity=100, refill_rate=10, token_cost=1)
 def word_of_the_day():
     return {"word": "Galaxy"}
 
